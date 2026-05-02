@@ -91,4 +91,4 @@ class Camera:
         self._compute_vectors()
 
     def zoom(self, delta_fov: float):
-        self.fov = float(np.clip(self.fov + delta_fov, 20.0, 100.0))
+        self.fov = float(np.clip(self.fov + delta_fov, 20.0, 150.0))

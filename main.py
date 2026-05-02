@@ -5,10 +5,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
 import pygame
 
 from camera import Camera
-from objects import Cubo, Esfera, Piramide
+from objects import Cubo, Esfera, Objeto3D, Piramide
 from quaternion import Quaternion
 from renderer import Renderizador
 from transforms import rotacao_x, rotacao_y, rotacao_z, translacao
@@ -43,13 +44,14 @@ class InputField:
         self.rect = rect
         self.value = value
 
-    def draw(self, screen: pygame.Surface, font: pygame.font.Font, active: bool):
-        pygame.draw.rect(screen, (54, 54, 70) if active else (46, 46, 62), self.rect, border_radius=5)
-        pygame.draw.rect(screen, (145, 145, 190) if active else (84, 84, 115), self.rect, 2, border_radius=5)
+    def draw(self, screen: pygame.Surface, font: pygame.font.Font, active: bool, y_offset: int = 0):
+        draw_rect = self.rect.move(0, y_offset)
+        pygame.draw.rect(screen, (54, 54, 70) if active else (46, 46, 62), draw_rect, border_radius=5)
+        pygame.draw.rect(screen, (145, 145, 190) if active else (84, 84, 115), draw_rect, 2, border_radius=5)
         label_text = font.render(self.label, True, (200, 200, 220))
         val_text = font.render(self.value, True, (235, 235, 245))
-        screen.blit(label_text, (self.rect.x + 8, self.rect.y + 5))
-        screen.blit(val_text, (self.rect.x + 8, self.rect.y + 28))
+        screen.blit(label_text, (draw_rect.x + 8, draw_rect.y + 5))
+        screen.blit(val_text, (draw_rect.x + 8, draw_rect.y + 28))
 
 
 def build_scene():
@@ -87,6 +89,34 @@ def make_objeto(cfg: ObjetoConfig):
         obj = Esfera(raio=raio, stacks=8, slices=14, cor=(90, 160, 255))
     apply_config_to_obj(obj, cfg)
     return obj
+
+
+def build_world_axes(length: float = 3.5) -> list[Objeto3D]:
+    ax = Objeto3D([[0.0, 0.0, 0.0], [length, 0.0, 0.0]], [(0, 1)], cor=(235, 85, 85))
+    ay = Objeto3D([[0.0, 0.0, 0.0], [0.0, length, 0.0]], [(0, 1)], cor=(90, 225, 120))
+    az = Objeto3D([[0.0, 0.0, 0.0], [0.0, 0.0, length]], [(0, 1)], cor=(90, 170, 255))
+    return [ax, ay, az]
+
+
+def draw_axis_gizmo(screen: pygame.Surface, camera: Camera, viewport_rect: pygame.Rect, font: pygame.font.Font):
+    center = (viewport_rect.right - 62, viewport_rect.top + 62)
+    radius = 32
+    camera._compute_vectors()
+    axes = [
+        ("X", np.array([1.0, 0.0, 0.0]), (235, 85, 85)),
+        ("Y", np.array([0.0, 1.0, 0.0]), (90, 225, 120)),
+        ("Z", np.array([0.0, 0.0, 1.0]), (90, 170, 255)),
+    ]
+    pygame.draw.circle(screen, (26, 26, 34), center, radius + 10)
+    pygame.draw.circle(screen, (105, 105, 132), center, radius + 10, 1)
+    for label, axis_world, color in axes:
+        x2d = float(np.dot(axis_world, camera.u))
+        y2d = float(np.dot(axis_world, camera.v))
+        end = (int(center[0] + x2d * radius), int(center[1] - y2d * radius))
+        pygame.draw.line(screen, color, center, end, 3)
+        pygame.draw.circle(screen, color, end, 4)
+        txt = font.render(label, True, color)
+        screen.blit(txt, (end[0] + 5, end[1] - 8))
 
 
 def draw_button(screen: pygame.Surface, rect: pygame.Rect, text: str, font, color, border=(88, 88, 110)):
@@ -227,6 +257,7 @@ def main():
     tempo = 0.0
     q_start = Quaternion.from_axis_angle([0, 1, 0], 0.0)
     q_end = Quaternion.from_axis_angle([1, 1, 0.2], math.radians(270.0))
+    world_axes = build_world_axes(3.5)
     dragging_extra = False
     dragging_builder = False
 
@@ -237,6 +268,10 @@ def main():
     active_field: str | None = None
     objeto_selecionado = -1
     lista_configs: list[ObjetoConfig] = []
+    form_view_rect = pygame.Rect(12, 120, PANEL_W - 24, 468)
+    list_view_rect = pygame.Rect(16, 614, PANEL_W - 32, 92)
+    form_scroll = 0.0
+    list_scroll = 0.0
 
     running = True
     while running:
@@ -301,42 +336,65 @@ def main():
                                 if objeto_selecionado < 0:
                                     set_defaults_for_tipo(fields_by_key, tipo_selecionado)
 
-                        list_origin_y = 612
-                        item_h = 26
-                        for i, cfg in enumerate(lista_configs):
-                            item_rect = pygame.Rect(16, list_origin_y + i * item_h, PANEL_W - 32, item_h - 2)
-                            if item_rect.collidepoint((mx, my)):
-                                objeto_selecionado = i
+                        b_add = pygame.Rect(20, 544 - int(form_scroll), 170, 42)
+                        b_new = pygame.Rect(200, 544 - int(form_scroll), 170, 42)
+                        b_del = pygame.Rect(20, 592 - int(form_scroll), 350, 36)
+                        if form_view_rect.collidepoint((mx, my)):
+                            if b_add.collidepoint((mx, my)):
+                                novo_cfg = fields_to_config(fields_by_key, tipo_selecionado)
+                                if objeto_selecionado >= 0:
+                                    lista_configs[objeto_selecionado] = novo_cfg
+                                    status_msg = f"Objeto atualizado: {novo_cfg.nome}"
+                                else:
+                                    lista_configs.append(novo_cfg)
+                                    status_msg = f"Objeto adicionado: {novo_cfg.nome}"
+                            elif b_new.collidepoint((mx, my)):
+                                objeto_selecionado = -1
+                                set_defaults_for_tipo(fields_by_key, tipo_selecionado)
+                                status_msg = "Pronto para inserir um novo objeto."
+                            elif b_del.collidepoint((mx, my)):
+                                if 0 <= objeto_selecionado < len(lista_configs):
+                                    removido = lista_configs.pop(objeto_selecionado)
+                                    objeto_selecionado = -1
+                                    set_defaults_for_tipo(fields_by_key, tipo_selecionado)
+                                    status_msg = f"Objeto removido: {removido.nome}"
+                                else:
+                                    status_msg = "Nenhum objeto selecionado para remover."
+
+                            for field in fields:
+                                moved = field.rect.move(0, -int(form_scroll))
+                                if moved.collidepoint((mx, my)):
+                                    active_field = field.key
+
+                        if list_view_rect.collidepoint((mx, my)):
+                            item_h = 26
+                            idx = int((my - list_view_rect.y + list_scroll) // item_h)
+                            if 0 <= idx < len(lista_configs):
+                                cfg = lista_configs[idx]
+                                objeto_selecionado = idx
                                 tipo_selecionado = cfg.tipo
                                 load_config_to_fields(fields_by_key, cfg)
                                 status_msg = f"Editando objeto: {cfg.nome}"
 
-                        b_add = pygame.Rect(20, 544, 170, 42)
-                        b_new = pygame.Rect(200, 544, 170, 42)
-                        if b_add.collidepoint((mx, my)):
-                            novo_cfg = fields_to_config(fields_by_key, tipo_selecionado)
-                            if objeto_selecionado >= 0:
-                                lista_configs[objeto_selecionado] = novo_cfg
-                                status_msg = f"Objeto atualizado: {novo_cfg.nome}"
-                            else:
-                                lista_configs.append(novo_cfg)
-                                status_msg = f"Objeto adicionado: {novo_cfg.nome}"
-                        elif b_new.collidepoint((mx, my)):
-                            objeto_selecionado = -1
-                            set_defaults_for_tipo(fields_by_key, tipo_selecionado)
-                            status_msg = "Pronto para inserir um novo objeto."
-
-                        for field in fields:
-                            if field.rect.collidepoint((mx, my)):
-                                active_field = field.key
-
                         if mx >= PANEL_W:
                             dragging_builder = True
                     elif event.button == 4:
-                        if pygame.mouse.get_pos()[0] >= PANEL_W:
+                        mx, my = pygame.mouse.get_pos()
+                        if form_view_rect.collidepoint((mx, my)):
+                            form_scroll = max(0.0, form_scroll - 28.0)
+                        elif list_view_rect.collidepoint((mx, my)):
+                            list_scroll = max(0.0, list_scroll - 26.0)
+                        elif mx >= PANEL_W:
                             camera_right.zoom(-2.0)
                     elif event.button == 5:
-                        if pygame.mouse.get_pos()[0] >= PANEL_W:
+                        mx, my = pygame.mouse.get_pos()
+                        form_max = max(0.0, 820.0 - form_view_rect.height)
+                        list_max = max(0.0, len(lista_configs) * 26.0 - list_view_rect.height)
+                        if form_view_rect.collidepoint((mx, my)):
+                            form_scroll = min(form_max, form_scroll + 28.0)
+                        elif list_view_rect.collidepoint((mx, my)):
+                            list_scroll = min(list_max, list_scroll + 26.0)
+                        elif mx >= PANEL_W:
                             camera_right.zoom(2.0)
                 elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                     dragging_builder = False
@@ -351,6 +409,12 @@ def main():
                     elif event.key == pygame.K_TAB:
                         idx = [f.key for f in fields].index(active_field)
                         active_field = fields[(idx + 1) % len(fields)].key
+                    elif event.key == pygame.K_DELETE:
+                        if 0 <= objeto_selecionado < len(lista_configs):
+                            removido = lista_configs.pop(objeto_selecionado)
+                            objeto_selecionado = -1
+                            set_defaults_for_tipo(fields_by_key, tipo_selecionado)
+                            status_msg = f"Objeto removido: {removido.nome}"
                     elif event.key == pygame.K_RETURN:
                         pass
                     else:
@@ -360,6 +424,12 @@ def main():
                                 field.value += ch
                         elif ch in "0123456789.-":
                             field.value += ch
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_DELETE:
+                    if 0 <= objeto_selecionado < len(lista_configs):
+                        removido = lista_configs.pop(objeto_selecionado)
+                        objeto_selecionado = -1
+                        set_defaults_for_tipo(fields_by_key, tipo_selecionado)
+                        status_msg = f"Objeto removido: {removido.nome}"
 
         if menu_state == "extra":
             handle_camera_keys(camera_full, dt)
@@ -387,7 +457,7 @@ def main():
             else:
                 esfera.apply_transform(Quaternion.from_axis_angle([1, 0, 0], tempo).to_rotation_matrix())
 
-            renderizador_full.render(screen, extra_objetos, camera_full)
+            renderizador_full.render(screen, extra_objetos + world_axes, camera_full)
             overlay = [
                 "Modo: Imagens do Ponto Extra",
                 "WASD/QE: mover camera",
@@ -400,6 +470,7 @@ def main():
                 txt = font.render(line, True, (230, 230, 230))
                 screen.blit(txt, (10, y))
                 y += 22
+            draw_axis_gizmo(screen, camera_full, pygame.Rect(0, 0, WIDTH, HEIGHT), small)
         elif menu_state == "gerar":
             handle_camera_keys(camera_right, dt)
             screen.fill(BG)
@@ -422,29 +493,74 @@ def main():
                 draw_button(screen, rect, tipo, small, (70, 124, 204) if selected else (56, 56, 74))
 
             hint_dim = "Dimensao 1=raio/base/tamanho | Dimensao 2=altura (piramide)"
-            screen.blit(small.render(hint_dim, True, (175, 175, 196)), (20, 102))
+            pygame.draw.rect(screen, (35, 35, 48), form_view_rect, border_radius=8)
+            pygame.draw.rect(screen, (82, 82, 102), form_view_rect, 1, border_radius=8)
+            old_clip = screen.get_clip()
+            screen.set_clip(form_view_rect)
+            screen.blit(small.render(hint_dim, True, (175, 175, 196)), (20, 102 - int(form_scroll)))
 
             for field in fields:
-                field.draw(screen, small, active_field == field.key)
+                field.draw(screen, small, active_field == field.key, y_offset=-int(form_scroll))
 
-            draw_button(screen, pygame.Rect(20, 544, 170, 42), "Adicionar/Atualizar", small, (56, 130, 88))
-            draw_button(screen, pygame.Rect(200, 544, 170, 42), "Novo", small, (88, 88, 116))
+            draw_button(
+                screen,
+                pygame.Rect(20, 544 - int(form_scroll), 170, 42),
+                "Adicionar/Atualizar",
+                small,
+                (56, 130, 88),
+            )
+            draw_button(
+                screen,
+                pygame.Rect(200, 544 - int(form_scroll), 170, 42),
+                "Novo",
+                small,
+                (88, 88, 116),
+            )
+            draw_button(
+                screen,
+                pygame.Rect(20, 592 - int(form_scroll), 350, 36),
+                "Deletar Selecionado",
+                small,
+                (135, 62, 62),
+            )
+            screen.set_clip(old_clip)
 
-            pygame.draw.line(screen, (82, 82, 102), (20, 606), (PANEL_W - 20, 606), 1)
-            screen.blit(small.render("Objetos instanciados:", True, (210, 210, 228)), (20, 612))
+            form_max = max(0.0, 820.0 - form_view_rect.height)
+            if form_max > 0:
+                bar_h = max(28, int(form_view_rect.height * (form_view_rect.height / 820.0)))
+                bar_y = form_view_rect.y + int((form_scroll / form_max) * (form_view_rect.height - bar_h))
+                pygame.draw.rect(screen, (70, 70, 90), pygame.Rect(form_view_rect.right - 7, form_view_rect.y + 2, 5, form_view_rect.height - 4), border_radius=2)
+                pygame.draw.rect(screen, (150, 150, 180), pygame.Rect(form_view_rect.right - 7, bar_y, 5, bar_h), border_radius=2)
+
+            screen.blit(small.render("Objetos instanciados:", True, (210, 210, 228)), (20, 592))
+            pygame.draw.rect(screen, (35, 35, 48), list_view_rect, border_radius=8)
+            pygame.draw.rect(screen, (82, 82, 102), list_view_rect, 1, border_radius=8)
+            old_clip = screen.get_clip()
+            screen.set_clip(list_view_rect)
+            item_h = 26
             for i, cfg in enumerate(lista_configs):
-                y = 612 + (i + 1) * 26
+                y = list_view_rect.y + i * item_h - int(list_scroll)
                 rect = pygame.Rect(16, y, PANEL_W - 32, 24)
                 selected = i == objeto_selecionado
                 pygame.draw.rect(screen, (76, 76, 110) if selected else (50, 50, 66), rect, border_radius=4)
                 txt = f"{i+1}. {cfg.nome} [{cfg.tipo}] p=({cfg.posicao[0]:.1f},{cfg.posicao[1]:.1f},{cfg.posicao[2]:.1f})"
                 screen.blit(small.render(txt, True, (236, 236, 245)), (22, y + 4))
+            screen.set_clip(old_clip)
 
-            objetos_view = [make_objeto(cfg) for cfg in lista_configs]
+            list_max = max(0.0, len(lista_configs) * 26.0 - list_view_rect.height)
+            if list_max > 0:
+                visible_ratio = list_view_rect.height / max(list_view_rect.height, len(lista_configs) * 26.0)
+                bar_h = max(20, int(list_view_rect.height * visible_ratio))
+                bar_y = list_view_rect.y + int((list_scroll / list_max) * (list_view_rect.height - bar_h))
+                pygame.draw.rect(screen, (70, 70, 90), pygame.Rect(list_view_rect.right - 6, list_view_rect.y + 2, 4, list_view_rect.height - 4), border_radius=2)
+                pygame.draw.rect(screen, (150, 150, 180), pygame.Rect(list_view_rect.right - 6, bar_y, 4, bar_h), border_radius=2)
+
+            objetos_view = [make_objeto(cfg) for cfg in lista_configs] + world_axes
             view_surface = screen.subsurface((PANEL_W, 0, VIEW_W, HEIGHT))
             renderizador_right.render(view_surface, objetos_view, camera_right)
             status = small.render(f"{status_msg} | ESC: menu inicial | R: resetar camera", True, (220, 220, 235))
             screen.blit(status, (PANEL_W + 10, 10))
+            draw_axis_gizmo(screen, camera_right, pygame.Rect(PANEL_W, 0, VIEW_W, HEIGHT), small)
         else:
             draw_menu_inicial(screen, title_font, font)
 
