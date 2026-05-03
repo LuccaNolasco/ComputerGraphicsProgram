@@ -136,9 +136,9 @@ def try_float(value: str, default: float = 0.0) -> float:
 def build_fields() -> list[InputField]:
     x = 20
     w = PANEL_W - 40
-    y = 190
-    h = 58
-    gap = 8
+    y = 152        # começa dentro de form_view_rect (y=120), logo após o hint
+    h = 54
+    gap = 6
     keys_labels = [
         ("nome", "Nome"),
         ("d1", "Dimensao 1"),
@@ -336,9 +336,9 @@ def main():
                                 if objeto_selecionado < 0:
                                     set_defaults_for_tipo(fields_by_key, tipo_selecionado)
 
-                        b_add = pygame.Rect(20, 544 - int(form_scroll), 170, 42)
-                        b_new = pygame.Rect(200, 544 - int(form_scroll), 170, 42)
-                        b_del = pygame.Rect(20, 592 - int(form_scroll), 350, 36)
+                        b_add = pygame.Rect(20, 714 - int(form_scroll), 170, 42)
+                        b_new = pygame.Rect(200, 714 - int(form_scroll), 170, 42)
+                        b_del = pygame.Rect(20, 764 - int(form_scroll), 350, 36)
                         if form_view_rect.collidepoint((mx, my)):
                             if b_add.collidepoint((mx, my)):
                                 novo_cfg = fields_to_config(fields_by_key, tipo_selecionado)
@@ -388,7 +388,7 @@ def main():
                             camera_right.zoom(-2.0)
                     elif event.button == 5:
                         mx, my = pygame.mouse.get_pos()
-                        form_max = max(0.0, 820.0 - form_view_rect.height)
+                        form_max = max(0.0, 680.0 - form_view_rect.height)
                         list_max = max(0.0, len(lista_configs) * 26.0 - list_view_rect.height)
                         if form_view_rect.collidepoint((mx, my)):
                             form_scroll = min(form_max, form_scroll + 28.0)
@@ -492,42 +492,44 @@ def main():
                 selected = tipo == tipo_selecionado
                 draw_button(screen, rect, tipo, small, (70, 124, 204) if selected else (56, 56, 74))
 
-            hint_dim = "Dimensao 1=raio/base/tamanho | Dimensao 2=altura (piramide)"
+            hint_dim = "D1: tamanho/raio/base   D2: altura (piramide)"
             pygame.draw.rect(screen, (35, 35, 48), form_view_rect, border_radius=8)
             pygame.draw.rect(screen, (82, 82, 102), form_view_rect, 1, border_radius=8)
             old_clip = screen.get_clip()
             screen.set_clip(form_view_rect)
-            screen.blit(small.render(hint_dim, True, (175, 175, 196)), (20, 102 - int(form_scroll)))
+            screen.blit(small.render(hint_dim, True, (175, 175, 196)), (22, 126 - int(form_scroll)))
 
             for field in fields:
                 field.draw(screen, small, active_field == field.key, y_offset=-int(form_scroll))
 
             draw_button(
                 screen,
-                pygame.Rect(20, 544 - int(form_scroll), 170, 42),
+                pygame.Rect(20, 714 - int(form_scroll), 170, 42),
                 "Adicionar/Atualizar",
                 small,
                 (56, 130, 88),
             )
             draw_button(
                 screen,
-                pygame.Rect(200, 544 - int(form_scroll), 170, 42),
+                pygame.Rect(200, 714 - int(form_scroll), 170, 42),
                 "Novo",
                 small,
                 (88, 88, 116),
             )
             draw_button(
                 screen,
-                pygame.Rect(20, 592 - int(form_scroll), 350, 36),
+                pygame.Rect(20, 764 - int(form_scroll), 350, 36),
                 "Deletar Selecionado",
                 small,
                 (135, 62, 62),
             )
             screen.set_clip(old_clip)
 
-            form_max = max(0.0, 820.0 - form_view_rect.height)
+            # Conteúdo total: hint(126) + 9 campos×60 + 2 botões(42+8+36) = ~680px rel. ao topo
+            FORM_CONTENT_H = 680.0
+            form_max = max(0.0, FORM_CONTENT_H - form_view_rect.height)
             if form_max > 0:
-                bar_h = max(28, int(form_view_rect.height * (form_view_rect.height / 820.0)))
+                bar_h = max(28, int(form_view_rect.height * (form_view_rect.height / FORM_CONTENT_H)))
                 bar_y = form_view_rect.y + int((form_scroll / form_max) * (form_view_rect.height - bar_h))
                 pygame.draw.rect(screen, (70, 70, 90), pygame.Rect(form_view_rect.right - 7, form_view_rect.y + 2, 5, form_view_rect.height - 4), border_radius=2)
                 pygame.draw.rect(screen, (150, 150, 180), pygame.Rect(form_view_rect.right - 7, bar_y, 5, bar_h), border_radius=2)
