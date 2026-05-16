@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 import pygame
 
+from advanced_module import AdvancedModule
 from camera import Camera
 from objects import Cubo, Esfera, Objeto3D, Piramide
 from quaternion import Quaternion
@@ -212,9 +213,11 @@ def draw_menu_inicial(screen: pygame.Surface, title_font, font):
 
     b1 = pygame.Rect(WIDTH // 2 - 180, 260, 360, 70)
     b2 = pygame.Rect(WIDTH // 2 - 180, 360, 360, 70)
+    b3 = pygame.Rect(WIDTH // 2 - 180, 460, 360, 70)
     draw_button(screen, b1, "Gerar Imagem", font, (60, 105, 178))
     draw_button(screen, b2, "Imagens do Ponto Extra", font, (74, 132, 92))
-    return b1, b2
+    draw_button(screen, b3, "Curvas, Superficies e Cores", font, (122, 86, 182))
+    return b1, b2, b3
 
 
 def handle_camera_keys(camera: Camera, dt: float):
@@ -250,9 +253,11 @@ def main():
     renderizador_right = Renderizador(VIEW_W, HEIGHT, background=BG)
     camera_full = build_camera(WIDTH / HEIGHT)
     camera_right = build_camera(VIEW_W / HEIGHT)
+    camera_advanced = build_camera(VIEW_W / HEIGHT)
 
     cubo, piramide, esfera = build_scene()
     extra_objetos = [cubo, piramide, esfera]
+    advanced_module = AdvancedModule(PANEL_W, HEIGHT)
     slerp_enabled = True
     tempo = 0.0
     q_start = Quaternion.from_axis_angle([0, 1, 0], 0.0)
@@ -260,6 +265,7 @@ def main():
     world_axes = build_world_axes(3.5)
     dragging_extra = False
     dragging_builder = False
+    dragging_advanced = False
 
     fields = build_fields()
     fields_by_key = {f.key: f for f in fields}
@@ -289,7 +295,7 @@ def main():
                     status_msg = "Retornou ao menu inicial."
             elif menu_state == "inicial":
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    b_gerar, b_extra = draw_menu_inicial(screen, title_font, font)
+                    b_gerar, b_extra, b_advanced = draw_menu_inicial(screen, title_font, font)
                     if b_gerar.collidepoint(event.pos):
                         menu_state = "gerar"
                         status_msg = "Modo Gerar Imagem ativo."
@@ -298,6 +304,9 @@ def main():
                         menu_state = "extra"
                         status_msg = "Modo Ponto Extra ativo."
                         camera_full = build_camera(WIDTH / HEIGHT)
+                    elif b_advanced.collidepoint(event.pos):
+                        menu_state = "curvas_cores"
+                        camera_advanced = build_camera(VIEW_W / HEIGHT)
             elif menu_state == "extra":
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
@@ -430,6 +439,29 @@ def main():
                         objeto_selecionado = -1
                         set_defaults_for_tipo(fields_by_key, tipo_selecionado)
                         status_msg = f"Objeto removido: {removido.nome}"
+            elif menu_state == "curvas_cores":
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        camera_advanced = build_camera(VIEW_W / HEIGHT)
+                    else:
+                        advanced_module.handle_keydown(event)
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        dragging_advanced = advanced_module.handle_left_click(event.pos)
+                    elif event.button == 4:
+                        if not advanced_module.handle_wheel(False, pygame.mouse.get_pos()):
+                            if pygame.mouse.get_pos()[0] >= PANEL_W:
+                                camera_advanced.zoom(-2.0)
+                    elif event.button == 5:
+                        if not advanced_module.handle_wheel(True, pygame.mouse.get_pos()):
+                            if pygame.mouse.get_pos()[0] >= PANEL_W:
+                                camera_advanced.zoom(2.0)
+                elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    dragging_advanced = False
+                elif event.type == pygame.MOUSEMOTION and dragging_advanced:
+                    if event.pos[0] >= PANEL_W:
+                        dx, dy = event.rel
+                        camera_advanced.orbit(-dx * 0.008, -dy * 0.008)
 
         if menu_state == "extra":
             handle_camera_keys(camera_full, dt)
@@ -563,6 +595,20 @@ def main():
             status = small.render(f"{status_msg} | ESC: menu inicial | R: resetar camera", True, (220, 220, 235))
             screen.blit(status, (PANEL_W + 10, 10))
             draw_axis_gizmo(screen, camera_right, pygame.Rect(PANEL_W, 0, VIEW_W, HEIGHT), small)
+        elif menu_state == "curvas_cores":
+            handle_camera_keys(camera_advanced, dt)
+            screen.fill(BG)
+            advanced_module.draw_panel(screen, font, small)
+            objetos_avancados = advanced_module.build_objects() + world_axes
+            view_surface = screen.subsurface((PANEL_W, 0, VIEW_W, HEIGHT))
+            renderizador_right.render(view_surface, objetos_avancados, camera_advanced)
+            status = small.render(
+                f"{advanced_module.status_msg} | ESC: menu inicial | R: resetar camera",
+                True,
+                (220, 220, 235),
+            )
+            screen.blit(status, (PANEL_W + 10, 10))
+            draw_axis_gizmo(screen, camera_advanced, pygame.Rect(PANEL_W, 0, VIEW_W, HEIGHT), small)
         else:
             draw_menu_inicial(screen, title_font, font)
 
