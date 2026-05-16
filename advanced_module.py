@@ -121,8 +121,10 @@ class AdvancedModule:
     def __init__(self, panel_w: int, height: int):
         self.panel_w = panel_w
         self.height = height
-        self.form_view_rect = pygame.Rect(12, 150, panel_w - 24, 430)
+        self.kind_view_rect = pygame.Rect(12, 52, panel_w - 24, 148)
+        self.form_view_rect = pygame.Rect(12, 210, panel_w - 24, 370)
         self.list_view_rect = pygame.Rect(16, 610, panel_w - 32, 92)
+        self.kind_scroll = 0.0
         self.form_scroll = 0.0
         self.list_scroll = 0.0
         self.active_field: str | None = None
@@ -225,6 +227,9 @@ class AdvancedModule:
             buttons.append((kind, rect))
         return buttons
 
+    def max_kind_scroll(self) -> float:
+        return max(0.0, 220.0 - self.kind_view_rect.height)
+
     def _palette_buttons(self) -> list[tuple[str, pygame.Rect, pygame.Rect]]:
         out = []
         y = 522
@@ -260,7 +265,8 @@ class AdvancedModule:
             return False
 
         for kind, rect in self._kind_buttons():
-            if rect.collidepoint(pos):
+            moved_rect = rect.move(0, -int(self.kind_scroll))
+            if self.kind_view_rect.collidepoint(pos) and moved_rect.collidepoint(pos):
                 self.selected_index = -1
                 if kind == KIND_BEZIER:
                     self.bezier_points.clear()
@@ -342,6 +348,10 @@ class AdvancedModule:
 
     def handle_wheel(self, down: bool, pos: tuple[int, int]) -> bool:
         mx, my = pos
+        if self.kind_view_rect.collidepoint((mx, my)):
+            step = 24.0 if down else -24.0
+            self.kind_scroll = max(0.0, min(self.max_kind_scroll(), self.kind_scroll + step))
+            return True
         if self.list_view_rect.collidepoint((mx, my)):
             step = 26.0 if down else -26.0
             self.list_scroll = max(0.0, min(self.max_list_scroll(), self.list_scroll + step))
@@ -450,9 +460,27 @@ class AdvancedModule:
         screen.blit(small.render("Geracao modular com palheta de cores.", True, (185, 185, 205)), (20, 38))
         self._draw_button(screen, pygame.Rect(self.panel_w - 50, 16, 28, 28), "?", small, (88, 88, 116))
 
+        pygame.draw.rect(screen, (35, 35, 48), self.kind_view_rect, border_radius=8)
+        pygame.draw.rect(screen, (82, 82, 102), self.kind_view_rect, 1, border_radius=8)
+        old_clip = screen.get_clip()
+        screen.set_clip(self.kind_view_rect)
         for kind, rect in self._kind_buttons():
             selected = kind == self.selected_kind
-            self._draw_button(screen, rect, kind, small, (70, 124, 204) if selected else (56, 56, 74))
+            self._draw_button(
+                screen,
+                rect.move(0, -int(self.kind_scroll)),
+                kind,
+                small,
+                (70, 124, 204) if selected else (56, 56, 74),
+            )
+        screen.set_clip(old_clip)
+
+        kind_max = self.max_kind_scroll()
+        if kind_max > 0:
+            bar_h = max(24, int(self.kind_view_rect.height * (self.kind_view_rect.height / 220.0)))
+            bar_y = self.kind_view_rect.y + int((self.kind_scroll / kind_max) * (self.kind_view_rect.height - bar_h))
+            pygame.draw.rect(screen, (70, 70, 90), pygame.Rect(self.kind_view_rect.right - 7, self.kind_view_rect.y + 2, 5, self.kind_view_rect.height - 4), border_radius=2)
+            pygame.draw.rect(screen, (150, 150, 180), pygame.Rect(self.kind_view_rect.right - 7, bar_y, 5, bar_h), border_radius=2)
 
         meta = KIND_META[self.selected_kind]
         pygame.draw.rect(screen, (35, 35, 48), self.form_view_rect, border_radius=8)
